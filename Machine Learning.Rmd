@@ -1,0 +1,92 @@
+---
+title: "Machine Learning"
+author: "Jennifer Bochenek"
+date: "December 17, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Project Summary
+In this project I take in the movement data and try to create a model that will sucessfully predict the type of activity that the person is doing using machine learning methods. I walk through the steps of pre-processing the data, creating the data, and discuss the results. Finally, I use my model to predict the testing data for the final course quiz.
+
+## Setup workspace
+```{r require, echo=TRUE}
+require(caret)
+require(parallel)
+require(doParallel)
+```
+
+##Load in the data
+Check if the files exist, if they don't then the code will download it. This code also turns invalid data into NA or other missing codes as appropriate.
+```{r load, echo=TRUE}
+target <- "pml_training.csv"
+if (!file.exists(target)) {
+    url <-
+        "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+    target <- "pml_training.csv"
+    download.file(url, destfile = target)
+}
+training <- read.csv(target, na.strings = c("NA","#DIV/0!",""))
+
+target <- "pml_testing.csv"
+if (!file.exists(target)) {
+    url <-
+        "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+    download.file(url, destfile = target)
+}
+testing <- read.csv(target, na.strings = c("NA","#DIV/0!",""))
+```
+##Clean the data
+This part of the code will clean the data, using the nearZeroVar function from the package 'Caret' to remove values that are close to zero. This also removes all values that are NA or null data. 
+
+```{r clean, echo=TRUE}
+subTrain <- training[, names(training)[!(nearZeroVar(training, saveMetrics = T)[, 4])]]
+subTrain <- subTrain[, names(subTrain)[sapply(subTrain, function (x)
+        ! (any(is.na(x) | x == "")))]]
+```
+
+##Start creating the training data
+This code will take out number of cases needed from the training dataset for the validation set, which will be used later. Technically using random forest method this is less important due to the fact that the random forests method uses bagging and random subspace. But I will be using the validation sample to check the work later. 
+```{r pressure, echo=TRUE}
+inTrain <- createDataPartition(subTrain$classe, p = 0.6, list = FALSE)
+subTraining <- subTrain[inTrain,]
+subValidation <- subTrain[-inTrain,]
+```
+
+##Create the predition model
+Although there are other modeling methods, I chose to use random forests. I have a brand new high CPU computer, so I didn't actually need to use the parallel processing (which actually through a bunch of errors) but felt that it was helpful to build into the code in case I wanted to run it on another computer later. The program is also designed to only run once, as it saves its output separately so that it won't try to re-run the time consuming process every time I knit this rmarkdown.
+```{r model, echo=TRUE}
+model <- "./data/model.RData"
+if (!file.exists(model)) {
+    clust <- makeCluster(detectCores() - 1)
+    registerDoParallel(clust)
+    fit <- train(classe ~ ., method = "rf", data = subTraining)
+    save(fit, file = "./data/model.RData")
+    stopCluster(clust)
+} else {
+    load(file = "./data/model.RData", verbose = TRUE)
+}
+```
+
+#Find out the accuracy
+As it says on the tin, it's a fairly standard code to get the prediction and generate the confusion matrix. I'm not sure that I trust that the accuracy was 100%, but that is the value given. 
+```{r predict, echo=TRUE}
+predTrain <- predict(fit, subTraining)
+confusionMatrix(predTrain, subTraining$classe)
+```
+##Find the accuracy of the validation set
+The validation set also has an accuracy of 100%, so the model is working very well. 
+```{r stuff, echo=TRUE}
+predValidation <- predict(fit, subValidation)
+confusionMatrix(predValidation, subValidation$classe)
+varImp(fit)
+```
+
+##Quiz answers
+I ran this to generate my answers for the final quiz. 20/20! Sucess! That's how I know it's working well. 
+```{r prediction, echo=TRUE}
+predTesting <- predict(fit, testing)
+predTesting
+```
